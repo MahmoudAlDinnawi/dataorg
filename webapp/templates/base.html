@@ -6,6 +6,38 @@
     <title>{% block title %}WhatsApp Conversation Organizer{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Fallback for when CDN is not available -->
+    <style>
+        .fas, .far { 
+            font-family: Arial, sans-serif; 
+            font-weight: bold;
+        }
+        .fas:before { content: "●"; }
+        .fa-dashboard:before { content: "📊"; }
+        .fa-clipboard-check:before { content: "✅"; }
+        .fa-comments:before { content: "💬"; }
+        .fa-chart-line:before { content: "📈"; }
+        .fa-list:before { content: "📋"; }
+        .fa-check:before { content: "✓"; }
+        .fa-star:before { content: "⭐"; }
+        .fa-users:before { content: "👥"; }
+        .fa-user:before { content: "👤"; }
+        .fa-rocket:before { content: "🚀"; }
+        .fa-download:before { content: "⬇️"; }
+        .fa-file-code:before { content: "📄"; }
+        .fa-info-circle:before { content: "ℹ️"; }
+        .fa-edit:before { content: "✏️"; }
+        .fa-times:before { content: "✖"; }
+        .fa-eye:before { content: "👁"; }
+        .fa-sticky-note:before { content: "📝"; }
+        .fa-arrow-left:before { content: "←"; }
+        .fa-plus:before { content: "+"; }
+        .fa-save:before { content: "💾"; }
+        .fa-trash:before { content: "🗑"; }
+        .fa-grip-vertical:before { content: "⋮⋮"; }
+        .fa-spinner:before { content: "⟳"; }
+        .fa-chart-bar:before { content: "📊"; }
+    </style>
     <style>
         body { background-color: #f8f9fa; }
         .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }

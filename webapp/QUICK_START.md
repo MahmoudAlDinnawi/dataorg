@@ -10,22 +10,22 @@ python3 setup_data.py
 
 ### 2. Copy Your Data Files
 
-#### Copy WhatsApp Chat Files
+#### Option A: Automated Copy (Recommended)
 ```bash
-# Copy all your .txt conversation files to the chats directory
-cp /path/to/your/whatsapp/files/*.txt ./chats/
-
-# Or if your files are elsewhere:
-mkdir -p chats
-# Then manually copy your chat files to the chats/ directory
+# This will automatically find and copy your existing organized data
+python3 copy_data.py
 ```
 
-#### Copy Quality Analysis Report
+#### Option B: Manual Copy
 ```bash
-# Copy the quality analysis report
-cp /path/to/quality_analysis_report.json ./organized_whatsapp_conversations/
+# Copy all your .txt conversation files to the chats directory
+cp /path/to/your/original/chats/*.txt ./chats/
 
-# If you don't have the report, the setup script will create a sample one
+# Copy the quality analysis report
+cp /path/to/organized_whatsapp_conversations/quality_analysis_report.json ./organized_whatsapp_conversations/
+
+# Copy batch files (optional)
+cp /path/to/organized_whatsapp_conversations/conversations_batch_*.txt ./organized_whatsapp_conversations/
 ```
 
 ### 3. Start the Application

@@ -57,7 +57,13 @@ def setup_data_structure():
     else:
         print(f"✅ Quality analysis report found: {quality_report}")
     
-    print("\n🚀 NEXT STEPS:")
+    print("\n🚀 AUTOMATED DATA COPY:")
+    print("=" * 50)
+    print("If you have the organized_whatsapp_conversations folder from the original analysis:")
+    print("🔧 Run: python3 copy_data.py")
+    print("   This will automatically find and copy your data files")
+    
+    print("\n📋 MANUAL STEPS (if automated copy doesn't work):")
     print("=" * 50)
     print("1. Copy your WhatsApp conversation files (.txt) to the 'chats' directory")
     print("2. Copy the quality_analysis_report.json to the 'organized_whatsapp_conversations' directory")
