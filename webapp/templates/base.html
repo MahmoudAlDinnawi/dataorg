@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}WhatsApp Conversation Organizer{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card { box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border: none; }
+        .message-card { margin-bottom: 10px; border-left: 4px solid; }
+        .message-agent { border-left-color: #28a745; background-color: #d4edda; }
+        .message-guest { border-left-color: #007bff; background-color: #d1ecf1; }
+        .message-bot { border-left-color: #ffc107; background-color: #fff3cd; }
+        .message-template { border-left-color: #6c757d; background-color: #e2e3e5; }
+        .progress-ring { position: relative; width: 120px; height: 120px; }
+        .progress-ring svg { width: 120px; height: 120px; transform: rotate(-90deg); }
+        .progress-ring circle { fill: transparent; stroke-width: 8; r: 52; cx: 60; cy: 60; }
+        .btn-review { margin: 2px; }
+        
+        /* Drag & Drop Styles */
+        .sortable-ghost { opacity: 0.4; }
+        .sortable-chosen { transform: scale(1.02); box-shadow: 0 8px 16px rgba(0,0,0,0.2); }
+        .drag-handle:hover { color: #007bff !important; }
+        
+        /* Message Edit Styles */
+        .message-card { transition: all 0.3s ease; position: relative; }
+        .message-card:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.1); }
+        .message-actions { min-width: 120px; }
+        
+        /* Animation for new/modified messages */
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .message-card.new-message { animation: slideIn 0.5s ease; }
+        
+        /* Edit mode indicators */
+        .edit-mode-active .message-card { border-left-width: 6px; }
+        .edit-mode-active .drag-handle { color: #28a745; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-comments"></i> Conversation Organizer
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="fas fa-dashboard"></i> Dashboard</a>
+                <a class="nav-link" href="/review"><i class="fas fa-clipboard-check"></i> Review</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container my-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

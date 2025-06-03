@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Conversation Organizer{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1><i class="fas fa-chart-line"></i> Team Progress Dashboard</h1>
+        <p class="text-muted">Track progress for fine-tuning data preparation</p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-list"></i> Total Conversations</h5>
+                <h2 class="text-primary">{{ progress.overall.total_conversations }}</h2>
+                <p class="text-muted">High-quality conversations to review</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-check"></i> Reviewed</h5>
+                <h2 class="text-success">{{ progress.overall.total_reviewed }}</h2>
+                <p class="text-muted">{{ progress.overall.progress_percentage }}% complete</p>
+                <div class="progress">
+                    <div class="progress-bar bg-success" style="width: {{ progress.overall.progress_percentage }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-star"></i> Accepted for Training</h5>
+                <h2 class="text-warning">{{ progress.overall.total_accepted }}</h2>
+                <p class="text-muted">Ready for fine-tuning</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-users"></i> Team Member Progress</h5>
+            </div>
+            <div class="card-body">
+                {% if progress.team_stats %}
+                    {% for member in progress.team_stats %}
+                    <div class="mb-3">
+                        <h6>{{ member.reviewer }}</h6>
+                        <div class="row">
+                            <div class="col-4">
+                                <small class="text-muted">Reviewed</small>
+                                <div class="fw-bold">{{ member.total_reviewed }}</div>
+                            </div>
+                            <div class="col-4">
+                                <small class="text-muted">Accepted</small>
+                                <div class="fw-bold text-success">{{ member.accepted }}</div>
+                            </div>
+                            <div class="col-4">
+                                <small class="text-muted">Rejected</small>
+                                <div class="fw-bold text-danger">{{ member.rejected }}</div>
+                            </div>
+                        </div>
+                        {% if member.last_active %}
+                        <small class="text-muted">Last active: {{ member.last_active[:16] }}</small>
+                        {% endif %}
+                    </div>
+                    <hr>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No team activity yet. Start reviewing conversations!</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-rocket"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-3">
+                    <a href="/review?reviewer=Team Member 1" class="btn btn-primary btn-lg">
+                        <i class="fas fa-user"></i> Start Reviewing as Team Member 1
+                    </a>
+                    <a href="/review?reviewer=Team Member 2" class="btn btn-info btn-lg">
+                        <i class="fas fa-user"></i> Start Reviewing as Team Member 2
+                    </a>
+                    <hr>
+                    <a href="/api/export?format=jsonl" class="btn btn-success" target="_blank">
+                        <i class="fas fa-download"></i> Export Training Data (JSONL)
+                    </a>
+                    <a href="/api/export?format=json" class="btn btn-outline-success" target="_blank">
+                        <i class="fas fa-file-code"></i> Export as JSON
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6><i class="fas fa-info-circle"></i> Fine-Tuning Guidelines</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> Accept high-quality agent responses</li>
+                    <li><i class="fas fa-check text-success"></i> Fix any classification errors</li>
+                    <li><i class="fas fa-times text-danger"></i> Reject spam or template-heavy conversations</li>
+                    <li><i class="fas fa-edit text-warning"></i> Edit messages if needed for training</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-refresh progress every 30 seconds
+setInterval(() => {
+    location.reload();
+}, 30000);
+</script>
+{% endblock %}

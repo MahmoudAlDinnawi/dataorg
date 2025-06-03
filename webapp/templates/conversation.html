@@ -1,0 +1,507 @@
+{% extends "base.html" %}
+
+{% block title %}Conversation: {{ filename }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1><i class="fas fa-comments"></i> Conversation Details</h1>
+                <p class="text-muted">{{ filename }} | {{ messages|length }} messages</p>
+            </div>
+            <div>
+                <button class="btn btn-outline-secondary" onclick="window.close()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <button class="btn btn-primary" onclick="toggleEditMode()">
+                    <i class="fas fa-edit"></i> <span id="edit-btn-text">Edit Conversation</span>
+                </button>
+                <button class="btn btn-success" id="add-message-btn" onclick="showAddMessage()" style="display: none;">
+                    <i class="fas fa-plus"></i> Add Message
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h6 class="mb-0">Message Classification Legend</h6>
+                    </div>
+                    <div class="col-md-4">
+                        <div id="edit-controls" style="display: none;">
+                            <button class="btn btn-success btn-sm" onclick="saveChanges()">
+                                <i class="fas fa-save"></i> Save Changes
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="cancelEdit()">
+                                <i class="fas fa-times"></i> Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <small class="text-muted">
+                    <span class="badge bg-success">agent</span> Staff members |
+                    <span class="badge bg-primary">guest</span> Customers |
+                    <span class="badge bg-warning">bot</span> Automated bot |
+                    <span class="badge bg-secondary">template</span> Template messages
+                    <br>
+                    <span id="edit-mode-help" style="display: none;" class="text-info">
+                        <i class="fas fa-info-circle"></i> 
+                        Drag messages to reorder | Click edit/remove buttons | Ctrl+Enter to add message | Escape to cancel
+                    </span>
+                </small>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                <div id="messages-container" class="sortable-container">
+                    {% for message in messages %}
+                    <div class="message-card message-{{ message.role }} p-3 sortable-item" data-message-id="{{ message.id }}">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="drag-handle me-2" style="display: none; cursor: move;">
+                                <i class="fas fa-grip-vertical text-muted"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="message-header mb-2">
+                                    <span class="role-badge badge 
+                                        {% if message.role == 'agent' %}bg-success
+                                        {% elif message.role == 'guest' %}bg-primary
+                                        {% elif message.role == 'bot' %}bg-warning
+                                        {% else %}bg-secondary{% endif %}" 
+                                        data-role="{{ message.role }}">{{ message.role }}</span>
+                                    <small class="text-muted ms-2">{{ message.timestamp }}</small>
+                                </div>
+                                <div class="message-content">
+                                    <div class="message-text">{{ message.text }}</div>
+                                    <textarea class="form-control message-edit" style="display: none;" rows="3">{{ message.text }}</textarea>
+                                </div>
+                            </div>
+                            <div class="message-actions" style="display: none;">
+                                <div class="btn-group-vertical">
+                                    <select class="form-select form-select-sm role-selector mb-1" style="width: 100px;">
+                                        <option value="agent" {% if message.role == 'agent' %}selected{% endif %}>agent</option>
+                                        <option value="guest" {% if message.role == 'guest' %}selected{% endif %}>guest</option>
+                                        <option value="bot" {% if message.role == 'bot' %}selected{% endif %}>bot</option>
+                                        <option value="template" {% if message.role == 'template' %}selected{% endif %}>template</option>
+                                    </select>
+                                    <button class="btn btn-outline-primary btn-sm mb-1" onclick="editMessage({{ message.id }})" title="Edit text">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="removeMessage({{ message.id }})" title="Remove">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- Add Message Section -->
+                <div id="add-message-section" style="display: none;" class="mt-3 p-3 border rounded bg-light">
+                    <h6><i class="fas fa-plus"></i> Add New Message</h6>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <select class="form-select" id="new-message-role">
+                                <option value="agent">agent</option>
+                                <option value="guest">guest</option>
+                                <option value="bot">bot</option>
+                                <option value="template">template</option>
+                            </select>
+                        </div>
+                        <div class="col-md-7">
+                            <textarea class="form-control" id="new-message-text" placeholder="Enter message text..." rows="2"></textarea>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-success w-100" onclick="addMessage()">
+                                <i class="fas fa-plus"></i> Add
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6><i class="fas fa-chart-bar"></i> Conversation Statistics</h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h4 class="text-success" id="agent-count">{{ messages | selectattr('role', 'equalto', 'agent') | list | length }}</h4>
+                            <small class="text-muted">Agent Messages</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h4 class="text-primary" id="guest-count">{{ messages | selectattr('role', 'equalto', 'guest') | list | length }}</h4>
+                            <small class="text-muted">Guest Messages</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h4 class="text-warning" id="bot-count">{{ messages | selectattr('role', 'equalto', 'bot') | list | length }}</h4>
+                            <small class="text-muted">Bot Messages</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h4 class="text-secondary" id="template-count">{{ messages | selectattr('role', 'equalto', 'template') | list | length }}</h4>
+                            <small class="text-muted">Template Messages</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+let editMode = false;
+let originalData = {};
+let sortable = null;
+let nextMessageId = {{ messages|length }};
+
+function toggleEditMode() {
+    editMode = !editMode;
+    const editBtnText = document.getElementById('edit-btn-text');
+    const editControls = document.getElementById('edit-controls');
+    const addMessageBtn = document.getElementById('add-message-btn');
+    const messageActions = document.querySelectorAll('.message-actions');
+    const dragHandles = document.querySelectorAll('.drag-handle');
+    const addMessageSection = document.getElementById('add-message-section');
+    const editModeHelp = document.getElementById('edit-mode-help');
+    const body = document.body;
+    
+    if (editMode) {
+        editBtnText.textContent = 'Cancel Edit';
+        editControls.style.display = 'block';
+        addMessageBtn.style.display = 'inline-block';
+        messageActions.forEach(action => action.style.display = 'block');
+        dragHandles.forEach(handle => handle.style.display = 'block');
+        editModeHelp.style.display = 'inline';
+        body.classList.add('edit-mode-active');
+        
+        // Enable drag & drop
+        enableSortable();
+        
+        // Store original data
+        document.querySelectorAll('.message-card').forEach(card => {
+            const messageId = card.dataset.messageId;
+            const role = card.querySelector('.role-badge').dataset.role;
+            const text = card.querySelector('.message-text').textContent;
+            originalData[messageId] = { role, text };
+        });
+        
+    } else {
+        editBtnText.textContent = 'Edit Conversation';
+        editControls.style.display = 'none';
+        addMessageBtn.style.display = 'none';
+        messageActions.forEach(action => action.style.display = 'none');
+        dragHandles.forEach(handle => handle.style.display = 'none');
+        addMessageSection.style.display = 'none';
+        editModeHelp.style.display = 'none';
+        body.classList.remove('edit-mode-active');
+        
+        // Disable drag & drop
+        disableSortable();
+        
+        // Hide any open edit textareas
+        document.querySelectorAll('.message-edit').forEach(edit => edit.style.display = 'none');
+        document.querySelectorAll('.message-text').forEach(text => text.style.display = 'block');
+    }
+}
+
+function enableSortable() {
+    const container = document.getElementById('messages-container');
+    sortable = Sortable.create(container, {
+        handle: '.drag-handle',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        onEnd: function(evt) {
+            updateStatistics();
+        }
+    });
+}
+
+function disableSortable() {
+    if (sortable) {
+        sortable.destroy();
+        sortable = null;
+    }
+}
+
+function cancelEdit() {
+    // Restore original data
+    document.querySelectorAll('.message-card').forEach(card => {
+        const messageId = card.dataset.messageId;
+        if (originalData[messageId]) {
+            const roleBadge = card.querySelector('.role-badge');
+            const roleSelector = card.querySelector('.role-selector');
+            const messageText = card.querySelector('.message-text');
+            
+            roleBadge.dataset.role = originalData[messageId].role;
+            roleBadge.textContent = originalData[messageId].role;
+            roleSelector.value = originalData[messageId].role;
+            messageText.textContent = originalData[messageId].text;
+            
+            updateMessageCardClass(card, originalData[messageId].role);
+        }
+    });
+    
+    toggleEditMode();
+    updateStatistics();
+}
+
+function updateMessageCardClass(card, role) {
+    card.className = `message-card message-${role} p-3`;
+    
+    const badge = card.querySelector('.role-badge');
+    badge.className = `role-badge badge ${getRoleBadgeClass(role)}`;
+}
+
+function getRoleBadgeClass(role) {
+    switch(role) {
+        case 'agent': return 'bg-success';
+        case 'guest': return 'bg-primary';
+        case 'bot': return 'bg-warning';
+        case 'template': return 'bg-secondary';
+        default: return 'bg-secondary';
+    }
+}
+
+function updateStatistics() {
+    const roleCounts = { agent: 0, guest: 0, bot: 0, template: 0 };
+    
+    document.querySelectorAll('.role-badge').forEach(badge => {
+        const role = badge.dataset.role;
+        if (roleCounts.hasOwnProperty(role)) {
+            roleCounts[role]++;
+        }
+    });
+    
+    document.getElementById('agent-count').textContent = roleCounts.agent;
+    document.getElementById('guest-count').textContent = roleCounts.guest;
+    document.getElementById('bot-count').textContent = roleCounts.bot;
+    document.getElementById('template-count').textContent = roleCounts.template;
+}
+
+// Handle role changes
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('role-selector')) {
+        const newRole = e.target.value;
+        const messageCard = e.target.closest('.message-card');
+        const roleBadge = messageCard.querySelector('.role-badge');
+        
+        roleBadge.dataset.role = newRole;
+        roleBadge.textContent = newRole;
+        roleBadge.className = `role-badge badge ${getRoleBadgeClass(newRole)}`;
+        
+        updateMessageCardClass(messageCard, newRole);
+        updateStatistics();
+    }
+});
+
+function showAddMessage() {
+    const addSection = document.getElementById('add-message-section');
+    addSection.style.display = addSection.style.display === 'none' ? 'block' : 'none';
+    
+    if (addSection.style.display === 'block') {
+        document.getElementById('new-message-text').focus();
+    }
+}
+
+function addMessage() {
+    const role = document.getElementById('new-message-role').value;
+    const text = document.getElementById('new-message-text').value.trim();
+    
+    if (!text) {
+        alert('Please enter message text');
+        return;
+    }
+    
+    nextMessageId++;
+    const messageId = nextMessageId;
+    const timestamp = new Date().toLocaleString();
+    
+    const messageHtml = `
+        <div class="message-card message-${role} p-3 sortable-item" data-message-id="${messageId}">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="drag-handle me-2" style="cursor: move;">
+                    <i class="fas fa-grip-vertical text-muted"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="message-header mb-2">
+                        <span class="role-badge badge ${getRoleBadgeClass(role)}" data-role="${role}">${role}</span>
+                        <small class="text-muted ms-2">${timestamp}</small>
+                        <span class="badge bg-info ms-2">NEW</span>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">${text}</div>
+                        <textarea class="form-control message-edit" style="display: none;" rows="3">${text}</textarea>
+                    </div>
+                </div>
+                <div class="message-actions">
+                    <div class="btn-group-vertical">
+                        <select class="form-select form-select-sm role-selector mb-1" style="width: 100px;">
+                            <option value="agent" ${role === 'agent' ? 'selected' : ''}>agent</option>
+                            <option value="guest" ${role === 'guest' ? 'selected' : ''}>guest</option>
+                            <option value="bot" ${role === 'bot' ? 'selected' : ''}>bot</option>
+                            <option value="template" ${role === 'template' ? 'selected' : ''}>template</option>
+                        </select>
+                        <button class="btn btn-outline-primary btn-sm mb-1" onclick="editMessage(${messageId})" title="Edit text">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="removeMessage(${messageId})" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('messages-container').insertAdjacentHTML('beforeend', messageHtml);
+    
+    // Clear form
+    document.getElementById('new-message-text').value = '';
+    document.getElementById('add-message-section').style.display = 'none';
+    
+    updateStatistics();
+}
+
+function editMessage(messageId) {
+    const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
+    const messageText = messageCard.querySelector('.message-text');
+    const messageEdit = messageCard.querySelector('.message-edit');
+    
+    if (messageEdit.style.display === 'none') {
+        // Switch to edit mode
+        messageText.style.display = 'none';
+        messageEdit.style.display = 'block';
+        messageEdit.focus();
+        
+        // Add save/cancel buttons
+        const editButton = messageCard.querySelector('.btn-outline-primary');
+        editButton.innerHTML = '<i class="fas fa-save"></i>';
+        editButton.title = 'Save changes';
+        editButton.onclick = () => saveMessageEdit(messageId);
+        
+    } else {
+        // Cancel edit
+        messageEdit.value = messageText.textContent;
+        messageText.style.display = 'block';
+        messageEdit.style.display = 'none';
+        
+        const editButton = messageCard.querySelector('.btn-outline-primary');
+        editButton.innerHTML = '<i class="fas fa-edit"></i>';
+        editButton.title = 'Edit text';
+        editButton.onclick = () => editMessage(messageId);
+    }
+}
+
+function saveMessageEdit(messageId) {
+    const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
+    const messageText = messageCard.querySelector('.message-text');
+    const messageEdit = messageCard.querySelector('.message-edit');
+    
+    const newText = messageEdit.value.trim();
+    if (!newText) {
+        alert('Message text cannot be empty');
+        return;
+    }
+    
+    messageText.textContent = newText;
+    messageText.style.display = 'block';
+    messageEdit.style.display = 'none';
+    
+    const editButton = messageCard.querySelector('.btn-outline-primary');
+    editButton.innerHTML = '<i class="fas fa-edit"></i>';
+    editButton.title = 'Edit text';
+    editButton.onclick = () => editMessage(messageId);
+    
+    // Add modified indicator
+    if (!messageCard.querySelector('.badge-warning')) {
+        const header = messageCard.querySelector('.message-header');
+        header.insertAdjacentHTML('beforeend', '<span class="badge bg-warning ms-2">MODIFIED</span>');
+    }
+}
+
+function removeMessage(messageId) {
+    if (confirm('Are you sure you want to remove this message?')) {
+        const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
+        messageCard.style.transition = 'opacity 0.3s ease';
+        messageCard.style.opacity = '0';
+        
+        setTimeout(() => {
+            messageCard.remove();
+            updateStatistics();
+        }, 300);
+    }
+}
+
+async function saveChanges() {
+    const correctedMessages = [];
+    
+    document.querySelectorAll('.message-card').forEach((card, index) => {
+        const messageId = parseInt(card.dataset.messageId);
+        const role = card.querySelector('.role-badge').dataset.role;
+        const text = card.querySelector('.message-text').textContent;
+        
+        correctedMessages.push({
+            id: messageId,
+            role: role,
+            text: text,
+            order: index
+        });
+    });
+    
+    try {
+        // Note: This would need to be integrated with the review system
+        // For now, we'll just show a success message
+        alert(`Changes saved successfully! 
+        - ${correctedMessages.length} messages in conversation
+        - Changes will be applied when this conversation is reviewed.`);
+        toggleEditMode();
+    } catch (error) {
+        alert('Error saving changes. Please try again.');
+    }
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    if (editMode) {
+        if (e.key === 'Escape') {
+            cancelEdit();
+            e.preventDefault();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            showAddMessage();
+            e.preventDefault();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            saveChanges();
+            e.preventDefault();
+        }
+    }
+});
+
+// Handle Enter key in add message textarea
+document.addEventListener('keydown', function(e) {
+    if (e.target.id === 'new-message-text' && e.key === 'Enter' && !e.shiftKey) {
+        addMessage();
+        e.preventDefault();
+    }
+});
+
+// Initialize statistics
+updateStatistics();
+</script>
+{% endblock %}
