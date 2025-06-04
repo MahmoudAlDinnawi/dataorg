@@ -505,6 +505,7 @@ def approved():
 @app.route('/conversation/<filename>')
 def view_conversation(filename):
     """View individual conversation for detailed review"""
+    # First get the original messages
     messages = conv_manager.get_conversation_content(filename)
     
     # Check if there are saved edits for this conversation
@@ -516,6 +517,16 @@ def view_conversation(filename):
         conn.close()
         
         has_saved_edits = bool(result and result[0])
+        
+        # If there are saved edits, use them instead of the original messages
+        if has_saved_edits and result[0]:
+            try:
+                edited_messages = json.loads(result[0])
+                messages = edited_messages
+                print(f"✅ Loaded edited version of {filename} with {len(messages)} messages")
+            except Exception as e:
+                print(f"⚠️  Error loading edited messages for {filename}: {e}")
+                # Fall back to original messages
         
     except Exception as e:
         has_saved_edits = False

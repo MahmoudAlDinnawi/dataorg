@@ -17,8 +17,8 @@
                     {% endif %}
                 </p>
                 <div id="workflow-status" class="mt-2">
-                    <span class="badge bg-secondary" id="status-indicator">
-                        📝 Original Conversation
+                    <span class="badge {% if has_saved_edits %}bg-success{% else %}bg-secondary{% endif %}" id="status-indicator">
+                        {% if has_saved_edits %}💾 Showing Edited Version{% else %}📝 Original Conversation{% endif %}
                     </span>
                 </div>
             </div>
@@ -247,9 +247,6 @@ function toggleEditMode() {
         
         // Enable drag & drop
         enableSortable();
-        
-        // Load any saved edits
-        loadSavedEdits();
         
         // Store original data for cancel functionality
         document.querySelectorAll('.message-card').forEach(card => {
@@ -537,10 +534,7 @@ async function saveChanges() {
         });
         
         if (response.data.status === 'success') {
-            // Exit edit mode and show the saved conversation
-            toggleEditMode();
-            
-            // Apply the saved changes to the view immediately
+            // First apply the saved changes to ensure they're visible
             correctedMessages.forEach(savedMsg => {
                 const messageCard = document.querySelector(`[data-message-id="${savedMsg.id}"]`);
                 if (messageCard) {
@@ -557,13 +551,26 @@ async function saveChanges() {
                     // Update card class
                     updateMessageCardClass(messageCard, savedMsg.role);
                     
+                    // Remove any existing status badges
+                    const existingBadges = messageCard.querySelectorAll('.badge-success, .badge-warning, .badge-info');
+                    existingBadges.forEach(badge => badge.remove());
+                    
                     // Add saved indicator
-                    if (!messageCard.querySelector('.badge-success')) {
-                        const header = messageCard.querySelector('.message-header');
-                        header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
-                    }
+                    const header = messageCard.querySelector('.message-header');
+                    header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
                 }
             });
+            
+            // Update the original data to reflect the saved changes
+            document.querySelectorAll('.message-card').forEach(card => {
+                const messageId = card.dataset.messageId;
+                const role = card.querySelector('.role-badge').dataset.role;
+                const text = card.querySelector('.message-text').textContent;
+                originalData[messageId] = { role, text };
+            });
+            
+            // Exit edit mode and show the saved conversation
+            toggleEditMode();
             
             // Show approve button
             const approveBtn = document.getElementById('approve-btn');
@@ -575,7 +582,7 @@ async function saveChanges() {
             statusIndicator.innerHTML = '💾 Edits Saved - Ready to Approve';
             
             // Show success message
-            showNotification('✅ Changes saved successfully! You can now approve this conversation.', 'success');
+            showNotification('✅ Changes saved successfully! The conversation now shows your edited version and is ready to approve.', 'success');
             
             updateStatistics();
             
@@ -693,6 +700,9 @@ async function loadSavedEdits() {
                         const header = messageCard.querySelector('.message-header');
                         header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
                     }
+                    
+                    // Update original data to reflect the saved edits as the new baseline
+                    originalData[savedMsg.id] = { role: savedMsg.role, text: savedMsg.text };
                 }
             });
             
@@ -720,6 +730,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const statusIndicator = document.getElementById('status-indicator');
         statusIndicator.className = 'badge bg-success';
         statusIndicator.innerHTML = '💾 Edits Saved - Ready to Approve';
+        
+        // Add saved indicators to all messages since we're showing the edited version
+        document.querySelectorAll('.message-card').forEach(card => {
+            const header = card.querySelector('.message-header');
+            if (!header.querySelector('.badge-success')) {
+                header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
+            }
+        });
     }
 });
 
