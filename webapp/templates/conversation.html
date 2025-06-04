@@ -653,12 +653,12 @@ Click OK to approve, or Cancel to continue editing.
         });
         
         if (response.data.status === 'success') {
-            showNotification('🎉 Conversation approved successfully! Redirecting to review page...', 'success');
+            showNotification('🎉 Conversation approved successfully! Your edits have been preserved and will be included in the export.', 'success');
             
-            // Redirect back to review page after 2 seconds
+            // Redirect back to review page after 3 seconds to give time to read the message
             setTimeout(() => {
                 window.location.href = '/review';
-            }, 2000);
+            }, 3000);
             
         } else {
             alert('❌ Error approving conversation. Please try again.');

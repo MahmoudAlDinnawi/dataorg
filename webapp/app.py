@@ -387,11 +387,19 @@ class ConversationManager:
         status = 'reviewed'
         timestamp = datetime.now().isoformat()
         
-        cursor.execute('''
-            UPDATE conversations 
-            SET status = ?, reviewer = ?, reviewed_at = ?, accepted = ?, notes = ?, corrected_messages = ?
-            WHERE filename = ?
-        ''', (status, reviewer, timestamp, accepted, notes, corrected_messages, filename))
+        # If no corrected_messages provided, preserve existing ones
+        if corrected_messages is None:
+            cursor.execute('''
+                UPDATE conversations 
+                SET status = ?, reviewer = ?, reviewed_at = ?, accepted = ?, notes = ?
+                WHERE filename = ?
+            ''', (status, reviewer, timestamp, accepted, notes, filename))
+        else:
+            cursor.execute('''
+                UPDATE conversations 
+                SET status = ?, reviewer = ?, reviewed_at = ?, accepted = ?, notes = ?, corrected_messages = ?
+                WHERE filename = ?
+            ''', (status, reviewer, timestamp, accepted, notes, corrected_messages, filename))
         
         # Update team progress
         cursor.execute('''
