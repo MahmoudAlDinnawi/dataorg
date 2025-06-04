@@ -59,109 +59,289 @@ class ConversationManager:
         conn.close()
     
     def load_conversations(self):
-        """Load conversations from quality report if not already in database"""
+        """Load conversations from quality report OR extract from batch files"""
         quality_report_path = os.path.join(DATA_DIR, "quality_analysis_report.json")
         
-        if not os.path.exists(quality_report_path):
-            print(f"⚠️  Quality analysis report not found: {quality_report_path}")
-            print(f"📋 Run 'python3 setup_data.py' to set up your data first")
-            return
+        # Try to load from quality report first
+        if os.path.exists(quality_report_path):
+            try:
+                with open(quality_report_path, 'r', encoding='utf-8') as f:
+                    quality_data = json.load(f)
+                self._load_from_quality_data(quality_data)
+                return
+            except Exception as e:
+                print(f"❌ Error loading quality report: {e}")
         
-        try:
-            with open(quality_report_path, 'r', encoding='utf-8') as f:
-                quality_data = json.load(f)
+        # If no quality report, try to extract from batch files
+        print(f"⚠️  Quality analysis report not found, extracting from batch files...")
+        quality_data = self._extract_from_batch_files()
+        
+        if quality_data:
+            self._load_from_quality_data(quality_data)
+            # Save the extracted data for future use
+            try:
+                with open(quality_report_path, 'w', encoding='utf-8') as f:
+                    json.dump(quality_data, f, indent=2, ensure_ascii=False)
+                print(f"✅ Created quality_analysis_report.json with {len(quality_data)} conversations")
+            except Exception as e:
+                print(f"⚠️  Could not save quality report: {e}")
+        else:
+            print(f"❌ No data found. Please check your batch files in {DATA_DIR}")
+    
+    def _load_from_quality_data(self, quality_data):
+        """Load conversation data into database"""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        for conv in quality_data:
+            cursor.execute('''
+                INSERT OR IGNORE INTO conversations 
+                (filename, quality_score, message_count)
+                VALUES (?, ?, ?)
+            ''', (conv['filename'], conv['quality_score'], conv['message_count']))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Loaded {len(quality_data)} conversations into database")
+    
+    def _extract_from_batch_files(self):
+        """Extract conversation metadata from batch files"""
+        batch_files = list(Path(DATA_DIR).glob("conversations_batch_*.txt"))
+        
+        if not batch_files:
+            print(f"❌ No batch files found in {DATA_DIR}")
+            return []
+        
+        print(f"📄 Found {len(batch_files)} batch files, extracting metadata...")
+        
+        conversations_data = []
+        
+        for batch_file in batch_files:
+            try:
+                with open(batch_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Extract conversation metadata from batch file
+                conv_data = self._parse_batch_file_metadata(content)
+                conversations_data.extend(conv_data)
+                
+            except Exception as e:
+                print(f"❌ Error processing {batch_file.name}: {e}")
+        
+        return conversations_data
+    
+    def _parse_batch_file_metadata(self, content):
+        """Parse conversation metadata from batch file content"""
+        conversations = []
+        lines = content.split('\n')
+        
+        current_conv = None
+        
+        for line in lines:
+            line = line.strip()
             
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
+            # Look for conversation headers
+            if line.startswith('CONVERSATION') and '- File:' in line:
+                # Parse: CONVERSATION X - File: filename.txt
+                parts = line.split('- File: ')
+                if len(parts) > 1:
+                    filename = parts[1].strip()
+                    current_conv = {
+                        'filename': filename,
+                        'quality_score': 85,  # Default
+                        'message_count': 10,  # Default
+                        'avg_message_length': 50.0,
+                        'has_questions': True,
+                        'template_ratio': 0.2,
+                        'unique_content_ratio': 0.8
+                    }
             
-            for conv in quality_data:
-                cursor.execute('''
-                    INSERT OR IGNORE INTO conversations 
-                    (filename, quality_score, message_count)
-                    VALUES (?, ?, ?)
-                ''', (conv['filename'], conv['quality_score'], conv['message_count']))
+            # Parse quality info
+            elif line.startswith('Quality Score:') and current_conv:
+                try:
+                    score_part = line.split('Quality Score: ')[1]
+                    score = int(score_part.split(',')[0] if ',' in score_part else score_part)
+                    current_conv['quality_score'] = score
+                except:
+                    pass
             
-            conn.commit()
-            conn.close()
-            
-            print(f"✅ Loaded {len(quality_data)} conversations into database")
-            
-        except Exception as e:
-            print(f"❌ Error loading conversations: {e}")
-            print(f"📋 Please check your data setup and run 'python3 setup_data.py'")
+            # Parse message info
+            elif line.startswith('Messages:') and current_conv:
+                try:
+                    parts = line.split(', ')
+                    msg_count = int(parts[0].split('Messages: ')[1])
+                    avg_length = float(parts[1].split('Avg Length: ')[1])
+                    has_questions = parts[2].split('Questions: ')[1].lower() == 'true'
+                    
+                    current_conv['message_count'] = msg_count
+                    current_conv['avg_message_length'] = avg_length
+                    current_conv['has_questions'] = has_questions
+                    
+                    # Add the conversation to our list
+                    conversations.append(current_conv)
+                    current_conv = None
+                    
+                except Exception as e:
+                    # If parsing fails, still add the conversation with defaults
+                    if current_conv:
+                        conversations.append(current_conv)
+                        current_conv = None
+        
+        return conversations
     
     def get_conversation_content(self, filename):
-        """Load and parse a specific conversation file"""
+        """Load and parse a specific conversation from batch files"""
         try:
+            # First try to load from individual chat file
             file_path = Path(CHAT_DIR) / filename
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
+            if os.path.exists(file_path):
+                return self._parse_individual_chat_file(file_path)
             
-            lines = content.strip().split('\n')
-            messages = []
-            
-            # Known agent names
-            agent_names = {
-                'rona daghistani', 'rona', 'soha suliman', 'soha', 'modi', 
-                'sarah call center', 'sarah', 'sara mohamad', 'sara', 
-                'it departments', 'it department', 'sarah alothman', 
-                'shourouk', 'salman outhman', 'salman'
-            }
-            
-            # Template/Bot indicators
-            template_indicators = [
-                'template', 'verification code', 'your code is', 'was sent',
-                'نرحب بك', 'رمز التحقق', 'تم إرسال', 'نود أن نعرف رأيكم',
-                'استمتع بليلة موسيقية', 'إنه لمن دواعي سرورنا', 'نعتذر في حال'
-            ]
-            
-            bot_indicators = [
-                'bot:', '_اهلا ومرحبا بكم في مطعم', 'ماذا تريد ان تفعل',
-                'تم تحويلك الى احد مندوبي', 'اختر اللغة المفضلة'
-            ]
-            
-            for i, line in enumerate(lines):
-                timestamp_match = re.match(r'\[([^\]]+)\]', line)
-                if timestamp_match:
-                    timestamp = timestamp_match.group(1)
-                    message_text = line[len(timestamp_match.group(0)):].strip()
-                    
-                    if message_text:
-                        # Extract sender name if present
-                        sender_match = re.match(r'^([^:]+):\s*(.+)', message_text)
-                        sender_name = ""
-                        actual_message = message_text
-                        
-                        if sender_match:
-                            sender_name = sender_match.group(1).strip().lower()
-                            actual_message = sender_match.group(2).strip()
-                        
-                        # Classify the role
-                        role = "guest"  # default
-                        
-                        if any(indicator in message_text.lower() for indicator in bot_indicators):
-                            role = "bot"
-                        elif any(indicator in message_text.lower() for indicator in template_indicators):
-                            role = "template"
-                        elif sender_name and any(agent_name in sender_name for agent_name in agent_names):
-                            role = "agent"
-                        elif any(name in message_text.lower() for name in agent_names):
-                            role = "agent"
-                        
-                        messages.append({
-                            'id': i,
-                            'timestamp': timestamp,
-                            'role': role,
-                            'text': message_text,
-                            'sender_name': sender_name,
-                            'actual_message': actual_message
-                        })
-            
-            return messages
+            # If individual file doesn't exist, extract from batch files
+            return self._extract_conversation_from_batches(filename)
             
         except Exception as e:
             print(f"Error loading conversation {filename}: {e}")
             return []
+    
+    def _parse_individual_chat_file(self, file_path):
+        """Parse messages from individual chat file"""
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        lines = content.strip().split('\n')
+        messages = []
+        
+        # Known agent names
+        agent_names = {
+            'rona daghistani', 'rona', 'soha suliman', 'soha', 'modi', 
+            'sarah call center', 'sarah', 'sara mohamad', 'sara', 
+            'it departments', 'it department', 'sarah alothman', 
+            'shourouk', 'salman outhman', 'salman'
+        }
+        
+        # Template/Bot indicators
+        template_indicators = [
+            'template', 'verification code', 'your code is', 'was sent',
+            'نرحب بك', 'رمز التحقق', 'تم إرسال', 'نود أن نعرف رأيكم',
+            'استمتع بليلة موسيقية', 'إنه لمن دواعي سرورنا', 'نعتذر في حال'
+        ]
+        
+        bot_indicators = [
+            'bot:', '_اهلا ومرحبا بكم في مطعم', 'ماذا تريد ان تفعل',
+            'تم تحويلك الى احد مندوبي', 'اختر اللغة المفضلة'
+        ]
+        
+        for i, line in enumerate(lines):
+            timestamp_match = re.match(r'\[([^\]]+)\]', line)
+            if timestamp_match:
+                timestamp = timestamp_match.group(1)
+                message_text = line[len(timestamp_match.group(0)):].strip()
+                
+                if message_text:
+                    # Extract sender name if present
+                    sender_match = re.match(r'^([^:]+):\s*(.+)', message_text)
+                    sender_name = ""
+                    actual_message = message_text
+                    
+                    if sender_match:
+                        sender_name = sender_match.group(1).strip().lower()
+                        actual_message = sender_match.group(2).strip()
+                    
+                    # Classify the role
+                    role = "guest"  # default
+                    
+                    if any(indicator in message_text.lower() for indicator in bot_indicators):
+                        role = "bot"
+                    elif any(indicator in message_text.lower() for indicator in template_indicators):
+                        role = "template"
+                    elif sender_name and any(agent_name in sender_name for agent_name in agent_names):
+                        role = "agent"
+                    elif any(name in message_text.lower() for name in agent_names):
+                        role = "agent"
+                    
+                    messages.append({
+                        'id': i,
+                        'timestamp': timestamp,
+                        'role': role,
+                        'text': message_text,
+                        'sender_name': sender_name,
+                        'actual_message': actual_message
+                    })
+        
+        return messages
+    
+    def _extract_conversation_from_batches(self, filename):
+        """Extract a specific conversation from batch files"""
+        batch_files = list(Path(DATA_DIR).glob("conversations_batch_*.txt"))
+        
+        for batch_file in batch_files:
+            try:
+                with open(batch_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Find the conversation in this batch file
+                messages = self._find_conversation_in_batch(content, filename)
+                if messages:
+                    return messages
+                    
+            except Exception as e:
+                print(f"Error searching in {batch_file.name}: {e}")
+        
+        # If not found, return empty list
+        print(f"Conversation {filename} not found in batch files")
+        return []
+    
+    def _find_conversation_in_batch(self, content, target_filename):
+        """Find and extract a specific conversation from batch content"""
+        lines = content.split('\n')
+        in_target_conversation = False
+        in_messages_section = False
+        messages = []
+        message_id = 0
+        
+        for line in lines:
+            line_stripped = line.strip()
+            
+            # Check if we found our target conversation
+            if line_stripped.startswith('CONVERSATION') and f'- File: {target_filename}' in line_stripped:
+                in_target_conversation = True
+                in_messages_section = False
+                continue
+            
+            # Check if we've moved to the next conversation
+            elif line_stripped.startswith('CONVERSATION') and in_target_conversation:
+                break  # We've finished our target conversation
+            
+            # Check for message section start
+            elif in_target_conversation and line_stripped == '=' * 80:
+                in_messages_section = True
+                continue
+            
+            # Parse messages
+            elif in_target_conversation and in_messages_section and ':' in line_stripped:
+                # Parse format: role: message
+                colon_index = line_stripped.find(':')
+                if colon_index > 0:
+                    role = line_stripped[:colon_index].strip()
+                    message_text = line_stripped[colon_index + 1:].strip()
+                    
+                    if role in ['agent', 'guest', 'bot', 'template'] and message_text:
+                        from datetime import datetime
+                        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
+                        
+                        messages.append({
+                            'id': message_id,
+                            'timestamp': timestamp,
+                            'role': role,
+                            'text': f"{role}: {message_text}",
+                            'sender_name': role,
+                            'actual_message': message_text
+                        })
+                        message_id += 1
+        
+        return messages if in_target_conversation else []
     
     def get_conversations_for_review(self, reviewer=None, status='pending', limit=50, offset=0):
         """Get conversations for review with pagination"""
