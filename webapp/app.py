@@ -470,6 +470,38 @@ def review():
                          total_count=total_count,
                          reviewer=reviewer)
 
+@app.route('/approved')
+def approved():
+    """Approved conversations page"""
+    page = int(request.args.get('page', 1))
+    limit = 20
+    offset = (page - 1) * limit
+    
+    conversations, total_count = conv_manager.get_conversations_for_review(
+        status='reviewed', 
+        limit=limit, 
+        offset=offset
+    )
+    
+    # Filter only accepted conversations
+    approved_conversations = [conv for conv in conversations if conv.get('accepted')]
+    approved_count = len(approved_conversations)
+    
+    # Get total approved count
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM conversations WHERE status = "reviewed" AND accepted = 1')
+    total_approved = cursor.fetchone()[0]
+    conn.close()
+    
+    total_pages = (total_approved + limit - 1) // limit
+    
+    return render_template('approved.html', 
+                         conversations=approved_conversations,
+                         current_page=page,
+                         total_pages=total_pages,
+                         total_count=total_approved)
+
 @app.route('/conversation/<filename>')
 def view_conversation(filename):
     """View individual conversation for detailed review"""
@@ -627,7 +659,7 @@ def api_find_replace():
 
 @app.route('/api/export')
 def api_export():
-    """Export accepted conversations in fine-tuning format"""
+    """Export accepted conversations in multiple formats"""
     format_type = request.args.get('format', 'jsonl')
     
     conn = sqlite3.connect(DB_PATH)
@@ -641,8 +673,12 @@ def api_export():
     accepted_conversations = cursor.fetchall()
     conn.close()
     
-    # Generate fine-tuning format
+    if format_type == 'txt_individual':
+        return export_individual_txt_files(accepted_conversations)
+    
+    # Generate training data for JSON/JSONL formats
     training_data = []
+    all_conversations = []
     
     for filename, corrected_messages_json in accepted_conversations:
         if corrected_messages_json:
@@ -652,24 +688,34 @@ def api_export():
             # Use original messages
             messages = conv_manager.get_conversation_content(filename)
         
-        # Convert to training format (customize based on your fine-tuning needs)
+        # Store full conversation for txt format
+        all_conversations.append({
+            'filename': filename,
+            'messages': messages
+        })
+        
+        # Convert to training format pairs
         conversation_pairs = []
         for i in range(len(messages) - 1):
             current_msg = messages[i]
             next_msg = messages[i + 1]
             
-            if current_msg['role'] in ['guest'] and next_msg['role'] in ['agent']:
-                conversation_pairs.append({
-                    "messages": [
-                        {"role": "user", "content": current_msg['actual_message']},
-                        {"role": "assistant", "content": next_msg['actual_message']}
-                    ]
-                })
+            if current_msg.get('role') in ['guest'] and next_msg.get('role') in ['agent']:
+                # Clean the message content
+                user_content = extract_clean_message(current_msg)
+                assistant_content = extract_clean_message(next_msg)
+                
+                if user_content and assistant_content:
+                    conversation_pairs.append({
+                        "messages": [
+                            {"role": "user", "content": user_content},
+                            {"role": "assistant", "content": assistant_content}
+                        ]
+                    })
         
         training_data.extend(conversation_pairs)
     
     if format_type == 'jsonl':
-        import io
         from flask import Response
         
         def generate():
@@ -680,7 +726,89 @@ def api_export():
                        mimetype='application/jsonl',
                        headers={'Content-Disposition': 'attachment; filename=fine_tuning_data.jsonl'})
     
+    elif format_type == 'json':
+        from flask import Response
+        
+        json_data = json.dumps(training_data, ensure_ascii=False, indent=2)
+        return Response(json_data,
+                       mimetype='application/json',
+                       headers={'Content-Disposition': 'attachment; filename=fine_tuning_data.json'})
+    
+    elif format_type == 'txt':
+        from flask import Response
+        
+        def generate():
+            for conv in all_conversations:
+                yield f"=== CONVERSATION: {conv['filename']} ===\n"
+                for msg in conv['messages']:
+                    clean_msg = extract_clean_message(msg)
+                    if clean_msg:
+                        yield f"{msg.get('role', 'unknown')}: {clean_msg}\n"
+                yield "\n" + "="*80 + "\n\n"
+        
+        return Response(generate(),
+                       mimetype='text/plain',
+                       headers={'Content-Disposition': 'attachment; filename=approved_conversations.txt'})
+    
     return jsonify(training_data)
+
+def extract_clean_message(message):
+    """Extract clean message content from message object"""
+    # Try different message content fields
+    content = message.get('actual_message') or message.get('text', '')
+    
+    if not content:
+        return ""
+    
+    # Remove role prefix if it exists (e.g., "guest: message" -> "message")
+    if ':' in content:
+        parts = content.split(':', 1)
+        if len(parts) > 1 and parts[0].strip().lower() in ['agent', 'guest', 'bot', 'template']:
+            content = parts[1].strip()
+    
+    return content.strip()
+
+def export_individual_txt_files(accepted_conversations):
+    """Export each conversation as individual txt files in a zip"""
+    import zipfile
+    import io
+    from flask import Response
+    
+    # Create zip file in memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for filename, corrected_messages_json in accepted_conversations:
+            if corrected_messages_json:
+                messages = json.loads(corrected_messages_json)
+            else:
+                messages = conv_manager.get_conversation_content(filename)
+            
+            # Create content for individual file
+            content_lines = []
+            content_lines.append(f"=== CONVERSATION: {filename} ===\n")
+            content_lines.append(f"Total Messages: {len(messages)}\n")
+            content_lines.append(f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            content_lines.append("="*50 + "\n\n")
+            
+            for msg in messages:
+                role = msg.get('role', 'unknown')
+                clean_msg = extract_clean_message(msg)
+                if clean_msg:
+                    content_lines.append(f"{role}: {clean_msg}\n")
+            
+            # Add file to zip
+            file_content = ''.join(content_lines)
+            safe_filename = filename.replace('.txt', '_approved.txt')
+            zip_file.writestr(safe_filename, file_content.encode('utf-8'))
+    
+    zip_buffer.seek(0)
+    
+    return Response(
+        zip_buffer.getvalue(),
+        mimetype='application/zip',
+        headers={'Content-Disposition': 'attachment; filename=approved_conversations_individual.zip'}
+    )
 
 @app.route('/api/progress')
 def api_progress():
