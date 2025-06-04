@@ -12,10 +12,15 @@
                     {{ filename }} | {{ messages|length }} messages
                     {% if has_saved_edits %}
                     <span class="badge bg-info ms-2">
-                        <i class="fas fa-save"></i> Has Saved Edits
+                        <i class="fas fa-save"></i> Has Saved Edits - Ready to Approve
                     </span>
                     {% endif %}
                 </p>
+                <div id="workflow-status" class="mt-2">
+                    <span class="badge bg-secondary" id="status-indicator">
+                        📝 Original Conversation
+                    </span>
+                </div>
             </div>
             <div>
                 <button class="btn btn-outline-secondary" onclick="window.close()">
@@ -45,12 +50,19 @@
                     </div>
                     <div class="col-md-4">
                         <div id="edit-controls" style="display: none;">
-                            <button class="btn btn-success btn-sm" onclick="saveChanges()">
-                                <i class="fas fa-save"></i> Save Changes
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="cancelEdit()">
-                                <i class="fas fa-times"></i> Cancel
-                            </button>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-success btn-sm" onclick="saveChanges()">
+                                    <i class="fas fa-save"></i> Save Changes
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="cancelEdit()">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                            </div>
+                            <div class="mt-2">
+                                <button class="btn btn-primary btn-sm w-100" id="approve-btn" onclick="approveConversation()" style="display: none;">
+                                    <i class="fas fa-check-circle"></i> Mark as Approved
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -525,17 +537,47 @@ async function saveChanges() {
         });
         
         if (response.data.status === 'success') {
-            alert(`✅ Changes saved successfully! 
-            - ${correctedMessages.length} messages in conversation
-            - Changes are now persistent and will be preserved.`);
+            // Exit edit mode and show the saved conversation
+            toggleEditMode();
             
-            // Add saved indicator to UI
-            document.querySelectorAll('.message-card').forEach(card => {
-                if (!card.querySelector('.badge-success')) {
-                    const header = card.querySelector('.message-header');
-                    header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
+            // Apply the saved changes to the view immediately
+            correctedMessages.forEach(savedMsg => {
+                const messageCard = document.querySelector(`[data-message-id="${savedMsg.id}"]`);
+                if (messageCard) {
+                    // Update role
+                    const roleBadge = messageCard.querySelector('.role-badge');
+                    roleBadge.dataset.role = savedMsg.role;
+                    roleBadge.textContent = savedMsg.role;
+                    roleBadge.className = `role-badge badge ${getRoleBadgeClass(savedMsg.role)}`;
+                    
+                    // Update text
+                    const messageText = messageCard.querySelector('.message-text');
+                    messageText.textContent = savedMsg.text;
+                    
+                    // Update card class
+                    updateMessageCardClass(messageCard, savedMsg.role);
+                    
+                    // Add saved indicator
+                    if (!messageCard.querySelector('.badge-success')) {
+                        const header = messageCard.querySelector('.message-header');
+                        header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
+                    }
                 }
             });
+            
+            // Show approve button
+            const approveBtn = document.getElementById('approve-btn');
+            approveBtn.style.display = 'block';
+            
+            // Update status indicator
+            const statusIndicator = document.getElementById('status-indicator');
+            statusIndicator.className = 'badge bg-success';
+            statusIndicator.innerHTML = '💾 Edits Saved - Ready to Approve';
+            
+            // Show success message
+            showNotification('✅ Changes saved successfully! You can now approve this conversation.', 'success');
+            
+            updateStatistics();
             
         } else {
             alert('❌ Error saving changes: ' + response.data.message);
@@ -544,6 +586,80 @@ async function saveChanges() {
     } catch (error) {
         alert('❌ Error saving changes. Please try again.');
         console.error('Save error:', error);
+    }
+}
+
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type === 'success' ? 'success' : 'info'} alert-dismissible fade show position-fixed`;
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+async function approveConversation() {
+    const filename = '{{ filename }}';
+    
+    // Show confirmation dialog
+    const confirmed = confirm(`
+🔍 Conversation Review Confirmation
+
+Are you sure you want to mark this conversation as APPROVED?
+
+✅ This conversation will be:
+- Moved to the approved list
+- Included in the final training data
+- Ready for fine-tuning export
+
+❌ Once approved, you cannot easily undo this action.
+
+Click OK to approve, or Cancel to continue editing.
+    `);
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    try {
+        // Mark conversation as approved
+        const response = await axios.post('/api/review', {
+            filename: filename,
+            reviewer: 'Editor', // You can modify this based on your needs
+            accepted: true,
+            notes: 'Conversation reviewed and edited by team member'
+        });
+        
+        if (response.data.status === 'success') {
+            showNotification('🎉 Conversation approved successfully! Redirecting to review page...', 'success');
+            
+            // Redirect back to review page after 2 seconds
+            setTimeout(() => {
+                window.location.href = '/review';
+            }, 2000);
+            
+        } else {
+            alert('❌ Error approving conversation. Please try again.');
+        }
+        
+    } catch (error) {
+        alert('❌ Error approving conversation. Please try again.');
+        console.error('Approval error:', error);
     }
 }
 
@@ -588,6 +704,24 @@ async function loadSavedEdits() {
         console.error('Error loading saved edits:', error);
     }
 }
+
+// Check if conversation has saved edits on page load
+document.addEventListener('DOMContentLoaded', function() {
+    startAutoSave();
+    
+    // If this conversation has saved edits, show approve button and update status
+    if ({{ 'true' if has_saved_edits else 'false' }}) {
+        const approveBtn = document.getElementById('approve-btn');
+        if (approveBtn) {
+            approveBtn.style.display = 'block';
+        }
+        
+        // Update status indicator
+        const statusIndicator = document.getElementById('status-indicator');
+        statusIndicator.className = 'badge bg-success';
+        statusIndicator.innerHTML = '💾 Edits Saved - Ready to Approve';
+    }
+});
 
 function showFindReplace() {
     const findReplaceSection = document.getElementById('find-replace-section');
@@ -663,27 +797,14 @@ async function findAndReplace() {
     }
 }
 
-// Auto-save functionality - save changes periodically
-let autoSaveInterval;
-
+// Manual save only - no auto-save to avoid confusion
 function startAutoSave() {
-    if (autoSaveInterval) {
-        clearInterval(autoSaveInterval);
-    }
-    
-    // Auto-save every 30 seconds when in edit mode
-    autoSaveInterval = setInterval(() => {
-        if (editMode) {
-            saveChanges();
-        }
-    }, 30000);
+    // Disabled auto-save for clearer workflow
+    console.log('Manual save mode enabled');
 }
 
 function stopAutoSave() {
-    if (autoSaveInterval) {
-        clearInterval(autoSaveInterval);
-        autoSaveInterval = null;
-    }
+    // No auto-save to stop
 }
 
 // Keyboard shortcuts
