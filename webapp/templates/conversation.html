@@ -8,7 +8,14 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
                 <h1><i class="fas fa-comments"></i> Conversation Details</h1>
-                <p class="text-muted">{{ filename }} | {{ messages|length }} messages</p>
+                <p class="text-muted">
+                    {{ filename }} | {{ messages|length }} messages
+                    {% if has_saved_edits %}
+                    <span class="badge bg-info ms-2">
+                        <i class="fas fa-save"></i> Has Saved Edits
+                    </span>
+                    {% endif %}
+                </p>
             </div>
             <div>
                 <button class="btn btn-outline-secondary" onclick="window.close()">
@@ -19,6 +26,9 @@
                 </button>
                 <button class="btn btn-success" id="add-message-btn" onclick="showAddMessage()" style="display: none;">
                     <i class="fas fa-plus"></i> Add Message
+                </button>
+                <button class="btn btn-warning" id="find-replace-btn" onclick="showFindReplace()" style="display: none;">
+                    <i class="fas fa-search"></i> Find & Replace
                 </button>
             </div>
         </div>
@@ -122,6 +132,36 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Find & Replace Section -->
+                <div id="find-replace-section" style="display: none;" class="mt-3 p-3 border rounded bg-warning-light">
+                    <h6><i class="fas fa-search"></i> Find & Replace Text</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label class="form-label">Find Text:</label>
+                            <input type="text" class="form-control" id="find-text" placeholder="Enter text to find...">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Replace With:</label>
+                            <input type="text" class="form-control" id="replace-text" placeholder="Enter replacement text...">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">&nbsp;</label>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-warning" onclick="findAndReplace()">
+                                    <i class="fas fa-exchange-alt"></i> Find & Replace All
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="hideFindReplace()">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i> 
+                        This will find and replace text in all messages of this conversation. Case-insensitive search.
+                    </small>
+                </div>
             </div>
         </div>
         
@@ -175,9 +215,11 @@ function toggleEditMode() {
     const editBtnText = document.getElementById('edit-btn-text');
     const editControls = document.getElementById('edit-controls');
     const addMessageBtn = document.getElementById('add-message-btn');
+    const findReplaceBtn = document.getElementById('find-replace-btn');
     const messageActions = document.querySelectorAll('.message-actions');
     const dragHandles = document.querySelectorAll('.drag-handle');
     const addMessageSection = document.getElementById('add-message-section');
+    const findReplaceSection = document.getElementById('find-replace-section');
     const editModeHelp = document.getElementById('edit-mode-help');
     const body = document.body;
     
@@ -185,6 +227,7 @@ function toggleEditMode() {
         editBtnText.textContent = 'Cancel Edit';
         editControls.style.display = 'block';
         addMessageBtn.style.display = 'inline-block';
+        findReplaceBtn.style.display = 'inline-block';
         messageActions.forEach(action => action.style.display = 'block');
         dragHandles.forEach(handle => handle.style.display = 'block');
         editModeHelp.style.display = 'inline';
@@ -193,7 +236,10 @@ function toggleEditMode() {
         // Enable drag & drop
         enableSortable();
         
-        // Store original data
+        // Load any saved edits
+        loadSavedEdits();
+        
+        // Store original data for cancel functionality
         document.querySelectorAll('.message-card').forEach(card => {
             const messageId = card.dataset.messageId;
             const role = card.querySelector('.role-badge').dataset.role;
@@ -205,9 +251,11 @@ function toggleEditMode() {
         editBtnText.textContent = 'Edit Conversation';
         editControls.style.display = 'none';
         addMessageBtn.style.display = 'none';
+        findReplaceBtn.style.display = 'none';
         messageActions.forEach(action => action.style.display = 'none');
         dragHandles.forEach(handle => handle.style.display = 'none');
         addMessageSection.style.display = 'none';
+        findReplaceSection.style.display = 'none';
         editModeHelp.style.display = 'none';
         body.classList.remove('edit-mode-active');
         
@@ -461,19 +509,180 @@ async function saveChanges() {
             id: messageId,
             role: role,
             text: text,
-            order: index
+            actual_message: text,
+            order: index,
+            timestamp: new Date().toLocaleString()
         });
     });
     
     try {
-        // Note: This would need to be integrated with the review system
-        // For now, we'll just show a success message
-        alert(`Changes saved successfully! 
-        - ${correctedMessages.length} messages in conversation
-        - Changes will be applied when this conversation is reviewed.`);
-        toggleEditMode();
+        // Save edits persistently
+        const filename = '{{ filename }}';
+        
+        const response = await axios.post('/api/save_edits', {
+            filename: filename,
+            corrected_messages: correctedMessages
+        });
+        
+        if (response.data.status === 'success') {
+            alert(`✅ Changes saved successfully! 
+            - ${correctedMessages.length} messages in conversation
+            - Changes are now persistent and will be preserved.`);
+            
+            // Add saved indicator to UI
+            document.querySelectorAll('.message-card').forEach(card => {
+                if (!card.querySelector('.badge-success')) {
+                    const header = card.querySelector('.message-header');
+                    header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
+                }
+            });
+            
+        } else {
+            alert('❌ Error saving changes: ' + response.data.message);
+        }
+        
     } catch (error) {
-        alert('Error saving changes. Please try again.');
+        alert('❌ Error saving changes. Please try again.');
+        console.error('Save error:', error);
+    }
+}
+
+async function loadSavedEdits() {
+    try {
+        const filename = '{{ filename }}';
+        const response = await axios.get(`/api/get_edits/${filename}`);
+        
+        if (response.data.status === 'success' && response.data.corrected_messages) {
+            const savedMessages = response.data.corrected_messages;
+            
+            // Apply saved edits to the UI
+            savedMessages.forEach(savedMsg => {
+                const messageCard = document.querySelector(`[data-message-id="${savedMsg.id}"]`);
+                if (messageCard) {
+                    // Update role
+                    const roleBadge = messageCard.querySelector('.role-badge');
+                    roleBadge.dataset.role = savedMsg.role;
+                    roleBadge.textContent = savedMsg.role;
+                    roleBadge.className = `role-badge badge ${getRoleBadgeClass(savedMsg.role)}`;
+                    
+                    // Update text
+                    const messageText = messageCard.querySelector('.message-text');
+                    messageText.textContent = savedMsg.text;
+                    
+                    // Update card class
+                    updateMessageCardClass(messageCard, savedMsg.role);
+                    
+                    // Add saved indicator
+                    if (!messageCard.querySelector('.badge-success')) {
+                        const header = messageCard.querySelector('.message-header');
+                        header.insertAdjacentHTML('beforeend', '<span class="badge bg-success ms-2">SAVED</span>');
+                    }
+                }
+            });
+            
+            updateStatistics();
+            console.log('✅ Loaded saved edits');
+        }
+        
+    } catch (error) {
+        console.error('Error loading saved edits:', error);
+    }
+}
+
+function showFindReplace() {
+    const findReplaceSection = document.getElementById('find-replace-section');
+    findReplaceSection.style.display = findReplaceSection.style.display === 'none' ? 'block' : 'none';
+    
+    if (findReplaceSection.style.display === 'block') {
+        document.getElementById('find-text').focus();
+    }
+}
+
+function hideFindReplace() {
+    document.getElementById('find-replace-section').style.display = 'none';
+    document.getElementById('find-text').value = '';
+    document.getElementById('replace-text').value = '';
+}
+
+async function findAndReplace() {
+    const findText = document.getElementById('find-text').value.trim();
+    const replaceText = document.getElementById('replace-text').value.trim();
+    
+    if (!findText) {
+        alert('Please enter text to find');
+        return;
+    }
+    
+    if (!confirm(`Replace all instances of "${findText}" with "${replaceText}"?`)) {
+        return;
+    }
+    
+    try {
+        const filename = '{{ filename }}';
+        
+        const response = await axios.post('/api/find_replace', {
+            filename: filename,
+            find_text: findText,
+            replace_text: replaceText
+        });
+        
+        if (response.data.status === 'success') {
+            const replacedCount = response.data.replaced_count;
+            const updatedMessages = response.data.updated_messages;
+            
+            if (replacedCount > 0) {
+                // Update the UI with the new messages
+                updatedMessages.forEach(updatedMsg => {
+                    const messageCard = document.querySelector(`[data-message-id="${updatedMsg.id}"]`);
+                    if (messageCard) {
+                        const messageText = messageCard.querySelector('.message-text');
+                        messageText.textContent = updatedMsg.text;
+                        
+                        // Add modified indicator
+                        if (!messageCard.querySelector('.badge-warning')) {
+                            const header = messageCard.querySelector('.message-header');
+                            header.insertAdjacentHTML('beforeend', '<span class="badge bg-warning ms-2">MODIFIED</span>');
+                        }
+                    }
+                });
+                
+                alert(`✅ Successfully replaced ${replacedCount} instances of "${findText}"`);
+                hideFindReplace();
+                
+            } else {
+                alert(`ℹ️ No instances of "${findText}" found in this conversation`);
+            }
+            
+        } else {
+            alert('❌ Error: ' + response.data.message);
+        }
+        
+    } catch (error) {
+        alert('❌ Error performing find and replace. Please try again.');
+        console.error('Find/Replace error:', error);
+    }
+}
+
+// Auto-save functionality - save changes periodically
+let autoSaveInterval;
+
+function startAutoSave() {
+    if (autoSaveInterval) {
+        clearInterval(autoSaveInterval);
+    }
+    
+    // Auto-save every 30 seconds when in edit mode
+    autoSaveInterval = setInterval(() => {
+        if (editMode) {
+            saveChanges();
+        }
+    }, 30000);
+}
+
+function stopAutoSave() {
+    if (autoSaveInterval) {
+        clearInterval(autoSaveInterval);
+        autoSaveInterval = null;
     }
 }
 
@@ -489,6 +698,9 @@ document.addEventListener('keydown', function(e) {
         } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             saveChanges();
             e.preventDefault();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            showFindReplace();
+            e.preventDefault();
         }
     }
 });
@@ -498,7 +710,15 @@ document.addEventListener('keydown', function(e) {
     if (e.target.id === 'new-message-text' && e.key === 'Enter' && !e.shiftKey) {
         addMessage();
         e.preventDefault();
+    } else if (e.target.id === 'find-text' && e.key === 'Enter') {
+        findAndReplace();
+        e.preventDefault();
     }
+});
+
+// Start auto-save when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    startAutoSave();
 });
 
 // Initialize statistics

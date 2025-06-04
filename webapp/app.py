@@ -474,7 +474,25 @@ def review():
 def view_conversation(filename):
     """View individual conversation for detailed review"""
     messages = conv_manager.get_conversation_content(filename)
-    return render_template('conversation.html', filename=filename, messages=messages)
+    
+    # Check if there are saved edits for this conversation
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT corrected_messages FROM conversations WHERE filename = ?', (filename,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        has_saved_edits = bool(result and result[0])
+        
+    except Exception as e:
+        has_saved_edits = False
+        print(f"Error checking for saved edits: {e}")
+    
+    return render_template('conversation.html', 
+                         filename=filename, 
+                         messages=messages,
+                         has_saved_edits=has_saved_edits)
 
 @app.route('/api/review', methods=['POST'])
 def api_review():
@@ -492,6 +510,120 @@ def api_review():
     conv_manager.update_conversation_status(filename, reviewer, accepted, notes, corrected_messages)
     
     return jsonify({'status': 'success'})
+
+@app.route('/api/save_edits', methods=['POST'])
+def api_save_edits():
+    """API endpoint to save conversation edits (persistent)"""
+    data = request.json
+    filename = data.get('filename')
+    corrected_messages = data.get('corrected_messages')
+    
+    if not filename or not corrected_messages:
+        return jsonify({'status': 'error', 'message': 'Missing filename or messages'})
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Save the corrected messages as JSON
+        cursor.execute('''
+            UPDATE conversations 
+            SET corrected_messages = ?
+            WHERE filename = ?
+        ''', (json.dumps(corrected_messages), filename))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'status': 'success', 'message': 'Edits saved successfully'})
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+@app.route('/api/get_edits/<filename>')
+def api_get_edits(filename):
+    """API endpoint to get saved edits for a conversation"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT corrected_messages FROM conversations WHERE filename = ?', (filename,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result and result[0]:
+            corrected_messages = json.loads(result[0])
+            return jsonify({'status': 'success', 'corrected_messages': corrected_messages})
+        else:
+            return jsonify({'status': 'success', 'corrected_messages': None})
+            
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+@app.route('/api/find_replace', methods=['POST'])
+def api_find_replace():
+    """API endpoint to find and replace text in conversation"""
+    data = request.json
+    filename = data.get('filename')
+    find_text = data.get('find_text', '').strip()
+    replace_text = data.get('replace_text', '').strip()
+    
+    if not filename or not find_text:
+        return jsonify({'status': 'error', 'message': 'Missing filename or search text'})
+    
+    try:
+        # Get current conversation content (including any saved edits)
+        messages = conv_manager.get_conversation_content(filename)
+        
+        # Check if there are saved edits
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT corrected_messages FROM conversations WHERE filename = ?', (filename,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result and result[0]:
+            # Use saved edits if available
+            saved_messages = json.loads(result[0])
+            messages = saved_messages
+        
+        # Perform find and replace
+        replaced_count = 0
+        for message in messages:
+            if find_text.lower() in message.get('text', '').lower():
+                # Case-insensitive replace
+                original_text = message.get('text', '')
+                new_text = re.sub(re.escape(find_text), replace_text, original_text, flags=re.IGNORECASE)
+                message['text'] = new_text
+                
+                # Also update actual_message if it exists
+                if 'actual_message' in message:
+                    original_actual = message.get('actual_message', '')
+                    new_actual = re.sub(re.escape(find_text), replace_text, original_actual, flags=re.IGNORECASE)
+                    message['actual_message'] = new_actual
+                
+                replaced_count += 1
+        
+        # Save the updated messages
+        if replaced_count > 0:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE conversations 
+                SET corrected_messages = ?
+                WHERE filename = ?
+            ''', (json.dumps(messages), filename))
+            conn.commit()
+            conn.close()
+        
+        return jsonify({
+            'status': 'success', 
+            'replaced_count': replaced_count,
+            'updated_messages': messages
+        })
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/api/export')
 def api_export():
